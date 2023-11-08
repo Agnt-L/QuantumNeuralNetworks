@@ -7,6 +7,9 @@ import numpy as np
 from qiskit import QuantumCircuit, transpile, execute, Aer, ClassicalRegister, QuantumRegister
 from qiskit.circuit import Parameter
 import random
+import matplotlib.pyplot as plt
+
+SHOTS = 50
 
 TRAINABLE_PARAMS = 20
 
@@ -68,9 +71,6 @@ def approximate_gradient(parameters, qnn, input_data, target, epsilon=1e-20):
 
     return gradient
 
-
-import random
-import numpy as np
 
 
 def initialize_adam_optimizer(parameters):
@@ -452,7 +452,7 @@ def predict(params, qnn, input_sample):
 
     assignedQNN = bind_parameter_values(params=params, qnn=qnn, input_sample=input_sample)
     transpiled_circuit = transpile(assignedQNN, backend)
-    shots = 100
+    shots = SHOTS
     job = execute(transpiled_circuit, backend=backend, shots=shots)
     result = job.result()
     counts = result.get_counts()
@@ -485,22 +485,25 @@ def update_parameters(params, loss_gradient, learning_rate):
     return updated_params
 
 
-def train_qnn(x_train, y_train, batch_size=32):
+def train_qnn(x_train, y_train, batch_size=32, save_plot=True, plot_filename="learning_curve.png"):
     # Build qnn circuit
     qc = build_qc_ent_small_conv()
 
     # Initialize model parameters
     params = [1.5] * TRAINABLE_PARAMS
-    num_epochs = 20
+    num_epochs = 3
 
-    input_data = x_train.values.tolist()[:50]
-    target_data = y_train.values.tolist()[:50]
+    input_data = x_train.values.tolist()[:10]
+    target_data = y_train.values.tolist()[:10]
     num_samples = len(input_data)
 
     # Initialize the Adam optimizer variables
     t = 0
     m, v, beta1, beta2, epsilon = initialize_adam_optimizer(
         params)  # Initialize these variables before the training loop
+    sample_losses = []  # List to store sample losses
+    train_losses = []  # List to store training loss
+    epoch_losses = []  # List to store average loss per epoch
 
     for epoch in range(num_epochs):
         total_loss = 0
@@ -525,7 +528,8 @@ def train_qnn(x_train, y_train, batch_size=32):
                 batch_gradient = [g + dg for g, dg in zip(batch_gradient, loss_gradient)]
                 total_loss += loss
                 batch_loss += loss
-                print(f'avg batch loss: {batch_loss / batch_size}')
+                sample_losses.append(loss)
+                print(f'sample loss: {loss}')
 
             # Update model parameters with the average gradient for the batch
             batch_gradient = [g / batch_size for g in batch_gradient]
@@ -537,11 +541,48 @@ def train_qnn(x_train, y_train, batch_size=32):
 
             # Update parameters using the Adam optimizer
             params, m, v = update_parameters_with_adam(params, batch_gradient, m, v, t, beta1, beta2, epsilon, 0.3)
-
             # params = update_parameters(params, batch_gradient, learning_rate=1e-10)
 
+            # Store the training loss for this batch
+            avg_batch_loss = batch_loss / batch_size
+            print(f'average batch loss: {avg_batch_loss}')
+            train_losses.append(avg_batch_loss)
         avg_loss = total_loss / num_samples
+        epoch_losses.append(avg_loss)
         print(f"Epoch {epoch + 1}/{num_epochs}, Average Loss: {avg_loss}")
+
+
+    # Plot the learning curve
+    plt.figure(figsize=(18, 6))
+    plt.subplot(1, 3, 1)
+    plt.plot(sample_losses, label='Sample Loss', marker='o')
+    plt.xlabel('Training Steps (Samples)')
+    plt.ylabel('Sample Loss')
+    plt.legend()
+    plt.title('Sample Loss')
+
+    plt.subplot(1, 3, 2)
+    plt.plot(train_losses, label='Batch Loss', marker='o')
+    plt.xlabel('Training Steps (Batches)')
+    plt.ylabel('Batch Loss')
+    plt.legend()
+    plt.title(f'Training Loss (Batch Size: {batch_size})')
+
+    plt.subplot(1, 3, 3)
+    plt.plot(epoch_losses, label='Epoch Loss', marker='o')
+    plt.xlabel('Epochs')
+    plt.ylabel('Average Epoch Loss')
+    plt.legend()
+    plt.title(f'Average Loss per Epoch (Batch Size: {batch_size})')
+
+    plt.tight_layout()
+
+    if save_plot:
+        plt.savefig(plot_filename)
+
+    if not save_plot:
+        plt.show()
+
 
 
 def main():
